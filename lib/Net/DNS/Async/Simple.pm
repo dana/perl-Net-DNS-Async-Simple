@@ -66,7 +66,7 @@ Net::DNS::Async::Simple - A simple wrapper around the excellent Net::DNS::Async
     ];
     Net::DNS::Async::Simple::massDNSLookup($list);
     ok $list->[0]->{address} eq '174.136.1.7', 'forward lookup worked';
-    ok $list->[1]->{ptrdname} eq 'tendorfour.realms.org', 'reverse lookup worked';
+    ok $list->[1]->{ptrdname} eq 'tendotfour.realms.org', 'reverse lookup worked';
 
 =head1 DESCRIPTION
 
