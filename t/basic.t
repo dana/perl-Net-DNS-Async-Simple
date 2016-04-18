@@ -1,6 +1,7 @@
 #!env perl
 
 use strict;use warnings;
+use Data::Dumper;
 
 use lib '../lib';
 use Test::More;
@@ -11,7 +12,7 @@ use_ok('Net::DNS::Async::Simple');
 my $list = [
     {   query => ['www.realms.org','A'],
     },{ query => ['174.136.1.7','PTR'],
-        useResolvers => ['8.8.4.4','4.2.2.2']
+        nameServers => ['8.8.4.4','4.2.2.2']
     }
 ];
 Net::DNS::Async::Simple::massDNSLookup($list);

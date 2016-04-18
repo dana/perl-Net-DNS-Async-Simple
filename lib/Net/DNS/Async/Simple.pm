@@ -2,6 +2,8 @@ package Net::DNS::Async::Simple;
 
 use Modern::Perl;
 use Net::DNS::Async;
+use Net::DNS::Resolver;
+use Storable;
 use Data::Dumper;
 
 sub massDNSLookup {
@@ -9,40 +11,66 @@ sub massDNSLookup {
         or die 'Net::DNS::Async::Simple: one argument required';
     die 'Net::DNS::Async::Simple: first required argument must be an ARRAY reference'
         if not ref $list or ref $list ne 'ARRAY';
-    my $async = new Net::DNS::Async(QueueSize => 20, Retries => 3);
+    my $asyncs = {};
 
     my $callback = sub {
         my ($index, $response) = @_;
+        my $item = $list->[$index];
         if(not $response) {     #timeout
-            $list->[$index]->{timeout} = 1;
+            $item->{timeout} = 1;
             return;
         }
         my @answers = $response->answer;
         if(not scalar @answers) {
-            $list->[$index]->{error} = "returned no answers via";
+            $item->{error} = "returned no answers via";
             return;
         }
         foreach my $answer (@answers) {
+            $item->{NetDNSAnswer} = {};
+            foreach my $key (keys %$answer) {
+                my $value = $answer->{$key};
+                if(ref $value) {
+                    $item->{NetDNSAnswer}->{$key} = Storable::dclone($value);
+                } else {
+                    $item->{NetDNSAnswer}->{$key} = $value;
+                }
+            }
             if(ref $answer eq 'Net::DNS::RR::A') {
-                $list->[$index]->{name} = $answer->name;
-                $list->[$index]->{address} = $answer->address;
+                $item->{name} = $answer->name;
+                $item->{address} = $answer->address;
             } elsif(ref $answer eq 'Net::DNS::RR::PTR') {
-                $list->[$index]->{ptrdname} = $answer->ptrdname;
+                $item->{ptrdname} = $answer->ptrdname;
             }
         }
     };
 
     my $i = 0;
     while($list->[$i]) {
+        my $item = $list->[$i];
         my $j = $i;
-        $async->add(
-            sub {
-                $callback->($j, @_)
-            }, @{$list->[$j]->{query}}
-        );
+        local $Data::Dumper::Sortkeys = 1;
+        my $nameServerInfo = $item->{nameServers} || [];
+        my $nameServerKey = Data::Dumper::Dumper $nameServerInfo;
+        if(not $asyncs->{$nameServerKey}) {
+            $asyncs->{$nameServerKey} = Net::DNS::Async->new(QueueSize => 20, Retries => 3);
+            if($item->{nameServers}) {
+                $asyncs->{$nameServerKey}->{Resolver} = Net::DNS::Resolver->new(
+                    nameservers => $item->{nameServers}
+                );
+            }
+        }
+        if($list->[$j]->{query}->[0] and $list->[$j]->{query}->[1]) {
+            $asyncs->{$nameServerKey}->add(
+                sub {
+                    $callback->($j, @_)
+                }, @{$list->[$j]->{query}}
+            );
+        }
         $i++;
     }
-    $async->await;
+    foreach my $nameServerKey (keys %{$asyncs}) {
+        $asyncs->{$nameServerKey}->await;
+    }
     return undef;
 }
 
@@ -61,7 +89,7 @@ Net::DNS::Async::Simple - A simple wrapper around the excellent Net::DNS::Async
     my $list = [
         {   query => ['www.realms.org','A'],
         },{ query => ['174.136.1.7','PTR'],
-            useResolvers => ['8.8.4.4','4.2.2.2']
+            nameServers => ['8.8.4.4','4.2.2.2']
         }
     ];
     Net::DNS::Async::Simple::massDNSLookup($list);
